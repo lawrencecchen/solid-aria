@@ -1,9 +1,7 @@
 import { onCleanup, onMount } from "solid-js";
 
-type OnClickOutsideRefType = HTMLElement | undefined;
-
-export function useOnClickOutside(
-  ref: OnClickOutsideRefType | OnClickOutsideRefType[],
+export function createClickOutside(
+  ref: Element | Element[],
   handler: (e: MouseEvent | TouchEvent) => void
 ) {
   function listener(e: MouseEvent | TouchEvent) {
@@ -21,11 +19,11 @@ export function useOnClickOutside(
   }
   onMount(() => {
     document.addEventListener("mousedown", listener);
-    document.addEventListener("touchstart", listener);
+    document.addEventListener("touchend", listener);
   });
 
   onCleanup(() => {
     document.removeEventListener("mousedown", listener);
-    document.removeEventListener("touchstart", listener);
+    document.removeEventListener("touchend", listener);
   });
 }

@@ -1,4 +1,4 @@
-import { ComputePositionConfig } from ".pnpm/@floating-ui+core@0.3.1/node_modules/@floating-ui/core";
+import { ComputePositionConfig } from "@floating-ui/core";
 import { computePosition } from "@floating-ui/dom";
 import {
   Accessor,
@@ -10,14 +10,14 @@ import {
   createUniqueId,
   JSX,
   mergeProps,
-  onCleanup,
   onMount,
   Setter,
   Show,
   useContext,
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
-import { useOnClickOutside } from "../useOnClickOutside";
+import { createClickOutside } from "~/lib/hooks/createOnClickOutside";
+import { createTrappedFocus } from "~/lib/hooks/createTrappedFocus";
 
 interface PopoverContextInterface {
   id: string;
@@ -112,48 +112,58 @@ function createStyles({
   };
 }
 
-const focusableElements =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
 type ContentBodyRenderProp<T, U> = ({
   ariaProps,
   isOpen,
-  contentElement,
+  setContentElement,
   style,
 }: {
   ariaProps: JSX.HTMLAttributes<T>;
   isOpen: Accessor<boolean>;
-  contentElement: any;
+  setContentElement: Setter<Element>;
   style: Accessor<JSX.CSSProperties>;
 }) => U;
 
 interface ContentBodyProps<T, U> {
   options?: Partial<ComputePositionConfig>;
+  role?: JSX.HTMLAttributes<Element>["role"];
   children?: U | ContentBodyRenderProp<T, U>;
 }
 
 const ContentBody = <T, U extends JSX.Element>(
   props: ContentBodyProps<T, U>
 ) => {
+  const merged = mergeProps({ role: "dialog", options: null }, props);
+
   const { id, referenceElement, setIsOpen, isOpen } = usePopover();
-  let contentElement: HTMLDivElement | undefined;
+  const [contentElement, setContentElement] = createSignal<Element>();
   const [style, setStyle] = createSignal<JSX.CSSProperties>();
+
+  function close() {
+    setIsOpen(false);
+    referenceElement()?.focus();
+  }
 
   createEffect(async () => {
     if (!isOpen()) {
       return;
     }
-    let floatingElement = referenceElement();
-    if (!floatingElement) {
-      throw new Error("No floating element found");
+
+    const content = contentElement(),
+      reference = referenceElement();
+
+    if (!reference) {
+      throw new Error("No reference element found");
     }
-    if (!contentElement) {
+    if (!content) {
       throw new Error("No content element found");
     }
+    createClickOutside([content, reference], close);
+    createTrappedFocus(content, close);
     const { x, y, strategy } = await computePosition(
-      floatingElement,
-      contentElement,
-      props.options
+      reference,
+      content as HTMLElement,
+      merged.options
     );
     setStyle(createStyles({ x, y, strategy }));
   });
@@ -161,119 +171,35 @@ const ContentBody = <T, U extends JSX.Element>(
   const ariaProps: JSX.AttrAttributes = {
     id,
     role: "dialog",
-    class: "relative",
   };
-  const child = props.children;
+  const child = merged.children;
 
   if (typeof child === "function") {
     return (child as ContentBodyRenderProp<T, U>)({
       ariaProps,
       isOpen,
-      contentElement,
+      setContentElement,
       style,
     });
   }
   return (
-    <div {...ariaProps} ref={contentElement} style={style()}>
-      {child}
-    </div>
-  );
-};
-
-const ContentBody2: Component<{
-  options?: Partial<ComputePositionConfig>;
-  children?:
-    | JSX.Element
-    | (({
-        childProps,
-        isOpen,
-      }: {
-        childProps: JSX.HTMLAttributes<any>;
-        isOpen: boolean;
-      }) => JSX.Element);
-}> = (props) => {
-  const { id, referenceElement, setIsOpen } = usePopover();
-  let contentElement: HTMLDivElement | undefined;
-  const [style, setStyle] = createSignal<JSX.CSSProperties>();
-  const c = children(() => props.children);
-
-  createEffect(async () => {
-    let floatingElement = referenceElement();
-    if (!floatingElement) {
-      throw new Error("No floating element found");
-    }
-    if (!contentElement) {
-      throw new Error("No content element found");
-    }
-    const { x, y, strategy } = await computePosition(
-      floatingElement,
-      contentElement,
-      props.options
-    );
-    setStyle(createStyles({ x, y, strategy }));
-  });
-
-  function handleKeyUp(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      setIsOpen(false);
-      e.stopPropagation();
-    }
-  }
-
-  onMount(() => {
-    const firstFocusableChild = contentElement?.querySelectorAll(
-      focusableElements
-    )[0] as HTMLElement;
-    firstFocusableChild?.focus();
-
-    document.addEventListener("keyup", handleKeyUp);
-    useOnClickOutside([contentElement, referenceElement()], () => {
-      setIsOpen(false);
-    });
-  });
-  onCleanup(() => {
-    document.removeEventListener("keyup", handleKeyUp);
-    referenceElement()?.focus();
-  });
-
-  const childProps: JSX.HTMLAttributes<HTMLDivElement> = {
-    id,
-    role: "dialog",
-    ref: contentElement,
-    class: "relative",
-    style: style(),
-  };
-
-  return (
-    <>
-      <div tabindex={0}></div>
+    <Show when={isOpen()}>
       <div
-        {...childProps}
-        // id={id}
-        // role="dialog"
-        // class="relative"
-        // style={style()}
-        // ref={contentElement}
+        {...ariaProps}
+        ref={setContentElement}
+        style={style()}
+        class="relative"
       >
-        {props.children}
+        {child}
       </div>
-      <div tabindex={0}></div>
-    </>
+    </Show>
   );
 };
 
 const Content = <T, U extends JSX.Element>(props: ContentBodyProps<T, U>) => {
-  const { isOpen } = usePopover();
-
   return (
     <Portal>
-      {/* {typeof child === "function" ? (
-        (child as any)({ isOpen })
-      ) : ( */}
-      <Show when={isOpen()}>
-        <ContentBody {...props} />
-      </Show>
-      {/* )} */}
+      <ContentBody {...props} />
     </Portal>
   );
 };
